@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forge Dashboard</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --line:#2a2f3a; --text:#e8eaf0; --mute:#8b93a7;
+          --a:#5b9dff; --b:#ff9f5b; --c:#6ee7b7; --d:#f472b6; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f5f6f8; --card:#fff; --line:#dfe2ea; --text:#14161c; --mute:#5d667a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--text);
+         font:15px/1.4 system-ui, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; }
+  h1 { margin:0 0 4px; font-size: 26px; }
+  .sub { color:var(--mute); margin-bottom:20px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }
+  .tile, .chart { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .tile .k { color:var(--mute); font-size:12px; text-transform:uppercase; letter-spacing:.06em; }
+  .tile .v { font-size:28px; font-weight:650; margin-top:4px; font-variant-numeric: tabular-nums; }
+  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px; }
+  .chart h2 { margin:0 0 8px; font-size:14px; color:var(--mute); font-weight:600; }
+  canvas { width:100%; height:130px; display:block; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Forge</h1>
+  <div class="sub">Engine: <b id="engine">...</b> &middot; refreshes every 500 ms</div>
+  <div class="tiles">
+    <div class="tile"><div class="k">Requests / sec</div><div class="v" id="rps">0</div></div>
+    <div class="tile"><div class="k">Open connections</div><div class="v" id="active">0</div></div>
+    <div class="tile"><div class="k">Queued</div><div class="v" id="queued">0</div></div>
+    <div class="tile"><div class="k">Rejected (503)</div><div class="v" id="rejected">0</div></div>
+    <div class="tile"><div class="k">JVM threads</div><div class="v" id="threads">0</div></div>
+    <div class="tile"><div class="k">Heap MB</div><div class="v" id="heap">0</div></div>
+    <div class="tile"><div class="k">Server CPU %</div><div class="v" id="cpu">0</div></div>
+  </div>
+  <div class="charts">
+    <div class="chart"><h2>Requests per second</h2><canvas id="c_rps"></canvas></div>
+    <div class="chart"><h2>Open connections</h2><canvas id="c_active"></canvas></div>
+    <div class="chart"><h2>JVM threads</h2><canvas id="c_threads"></canvas></div>
+  </div>
+</main>
+<script>
+  const N = 90;                                    // 45 seconds of history
+  const series = { rps: [], active: [], threads: [] };
+  const colors = { rps: '--a', active: '--b', threads: '--c' };
+  let lastTotal = null, lastTime = null;
+
+  function draw(id, data, colorVar) {
+    const cv = document.getElementById('c_' + id);
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    cv.width = w * dpr; cv.height = h * dpr;
+    const g = cv.getContext('2d'); g.scale(dpr, dpr);
+    const css = getComputedStyle(document.documentElement);
+    const max = Math.max(1, ...data) * 1.15;
+    g.strokeStyle = css.getPropertyValue('--line'); g.lineWidth = 1;
+    for (let i = 1; i < 4; i++) { const y = h * i / 4; g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+    if (data.length < 2) return;
+    g.strokeStyle = css.getPropertyValue(colorVar); g.lineWidth = 2; g.beginPath();
+    data.forEach((v, i) => {
+      const x = w * i / (N - 1) + (w - w * (data.length - 1) / (N - 1));
+      const y = h - (v / max) * (h - 6) - 3;
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    });
+    g.stroke();
+    g.fillStyle = css.getPropertyValue('--mute'); g.font = '11px system-ui';
+    g.fillText('max ' + Math.round(max), 4, 12);
+  }
+
+  function push(key, v) { series[key].push(v); if (series[key].length > N) series[key].shift(); }
+
+  async function tick() {
+    try {
+      const s = await (await fetch('/stats', { cache: 'no-store' })).json();
+      const now = performance.now();
+      if (lastTotal !== null) {
+        // the /stats request itself counts as 1 request, so subtract it
+        const rps = Math.max(0, (s.total - lastTotal - 1) / ((now - lastTime) / 1000));
+        push('rps', rps);
+        document.getElementById('rps').textContent = Math.round(rps);
+      }
+      lastTotal = s.total; lastTime = now;
+      push('active', s.active); push('threads', s.threads);
+      document.getElementById('engine').textContent = s.engine;
+      document.getElementById('active').textContent = s.active;
+      document.getElementById('queued').textContent = s.queued;
+      document.getElementById('rejected').textContent = s.rejected;
+      document.getElementById('threads').textContent = s.threads;
+      document.getElementById('heap').textContent = s.heapMb;
+      document.getElementById('cpu').textContent = s.cpuPct < 0 ? '-' : s.cpuPct;
+      for (const k of Object.keys(series)) draw(k, series[k], colors[k]);
+    } catch (e) { /* server busy or restarting: try again next tick */ }
+  }
+  setInterval(tick, 500); tick();
+</script>
+</body>
+</html>

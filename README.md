@@ -19,6 +19,32 @@ It started from a popular "multithreaded web server in Java" tutorial (single-th
 
 All six share the same HTTP parser, router and stats. Only *who runs the connection* changes.
 
+## Requirements
+
+- **JDK 21 or newer** (virtual threads are a standard feature from 21). Check with `java -version` and `javac -version`.
+- Nothing else: no Maven, no Gradle, no dependencies.
+
+## Setup
+
+```bash
+git clone https://github.com/iota-srijan/forge.git
+cd forge
+javac -d out src/forge/*.java      # compiles into ./out
+java -cp out forge.SelfTest        # sanity check: should end with all checks passing
+java -cp out forge.Main --engine=virtual --port=8080
+```
+
+Then open <http://localhost:8080/> or the live dashboard at <http://localhost:8080/dashboard>.
+
+## Project layout
+
+```
+src/forge/   the server: engines, HTTP parser, router, stats, load tester, charts
+www/         static files served by the server (dashboard.html)
+charts/      benchmark charts used in this README
+results.md   full benchmark tables
+```
+
 ## Run it
 
 ```bash
@@ -110,3 +136,7 @@ Three bugs in earlier versions of this benchmark are fixed, and each would have 
 - GET and HEAD only: no request bodies, no TLS, no HTTP/2.
 - The self-test checks behaviour (correct replies, 503 when full, clean stop). It cannot prove an absence of data races.
 - Pool and event-loop sizes are fixed at the values above, not tuned.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
